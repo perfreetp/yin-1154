@@ -15,13 +15,10 @@ import {
   Minus,
   X,
   Building2,
+  Inbox,
 } from "lucide-react";
 import { useInvoiceStore } from "@/store";
-import {
-  mockDepartmentStats,
-  mockDailyStats,
-  mockReviewerStats,
-} from "@/data/mockData";
+import { mockDailyStats } from "@/data/mockData";
 import { cn } from "@/lib/utils";
 import {
   InvoiceTypeLabels,
@@ -162,14 +159,14 @@ export default function StatisticsPage() {
       : "-";
 
     const summaryRows = [
-      { 批次编号: batch?.batchId || "-", 批次名称: batch?.batchName || "-", 所属部门: batch?.department || "-", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
-      { 批次编号: "=== 批次汇总 ===", 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
-      { 批次编号: `票据总数: ${batchInvoices.length}`, 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
-      { 批次编号: `已通过: ${passed}`, 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
-      { 批次编号: `已退回: ${rejected}`, 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
-      { 批次编号: `通过率: ${passRate}`, 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
-      { 批次编号: "", 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
-      { 批次编号: "=== 票据明细 ===", 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
+      { 批次编号: batch?.batchId || "-", 批次名称: batch?.batchName || "-", 所属部门: batch?.department || "-", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "", 批次通过率: "" },
+      { 批次编号: "=== 批次汇总 ===", 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "", 批次通过率: "" },
+      { 批次编号: `票据总数: ${batchInvoices.length}`, 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "", 批次通过率: "" },
+      { 批次编号: `已通过: ${passed}`, 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "", 批次通过率: "" },
+      { 批次编号: `已退回: ${rejected}`, 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "", 批次通过率: "" },
+      { 批次编号: `通过率: ${passRate}`, 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "", 批次通过率: "" },
+      { 批次编号: "", 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "", 批次通过率: "" },
+      { 批次编号: "=== 票据明细 ===", 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "", 批次通过率: "" },
     ];
 
     const detailRows = batchInvoices.map((inv) => ({
@@ -184,6 +181,7 @@ export default function StatisticsPage() {
       票据状态: InvoiceStatusLabels[inv.status],
       处理人: inv.reviewer || "-",
       复核结果: inv.status === "passed" ? "通过" : inv.status === "rejected" ? "已退回" : inv.status === "exception" ? "异常待处理" : "处理中",
+      批次通过率: passRate,
     }));
 
     return [...summaryRows, ...detailRows];
@@ -310,11 +308,8 @@ export default function StatisticsPage() {
     return result;
   }, [filteredInvoices]);
 
-  const maxDailyCount = Math.max(...mockDailyStats.map((d) => d.processedCount));
-  const maxDeptCount = Math.max(...(deptStats.length > 0 ? deptStats : mockDepartmentStats).map((d) => d.totalCount));
-
-  const displayDeptStats = deptStats.length > 0 ? deptStats : mockDepartmentStats;
-  const displayClerkStats = clerkStats.length > 0 ? clerkStats : mockClerkStats;
+  const maxDailyCount = Math.max(1, ...mockDailyStats.map((d) => d.processedCount));
+  const maxDeptCount = Math.max(1, ...deptStats.map((d) => d.totalCount));
 
   return (
     <div className="p-5 space-y-5 h-full overflow-auto">
@@ -581,52 +576,60 @@ export default function StatisticsPage() {
             </h3>
           </div>
           <div className="p-5 space-y-3">
-            {displayDeptStats.map((dept) => {
-              const barW = (dept.totalCount / maxDeptCount) * 100;
-              return (
-                <div key={dept.department}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-slate-700">
-                      {dept.department}
-                    </span>
-                    <div className="flex items-center space-x-3 text-xs">
-                      <span className="text-slate-500">
-                        {dept.passedCount}/{dept.totalCount}
+            {deptStats.length > 0 ? (
+              deptStats.map((dept) => {
+                const barW = (dept.totalCount / maxDeptCount) * 100;
+                const passRatio = dept.totalCount > 0 ? dept.passedCount / dept.totalCount : 0;
+                return (
+                  <div key={dept.department}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-slate-700">
+                        {dept.department}
                       </span>
-                      <span
+                      <div className="flex items-center space-x-3 text-xs">
+                        <span className="text-slate-500">
+                          {dept.passedCount}/{dept.totalCount}
+                        </span>
+                        <span
+                          className={cn(
+                            "font-medium font-mono",
+                            dept.passRate >= 90
+                              ? "text-success-600"
+                              : dept.passRate >= 80
+                              ? "text-warning-600"
+                              : "text-danger-600"
+                          )}
+                        >
+                          {dept.passRate}%
+                        </span>
+                      </div>
+                    </div>
+                    <div className="h-5 bg-slate-100 rounded-sm overflow-hidden relative">
+                      <div
                         className={cn(
-                          "font-medium font-mono",
+                          "h-full",
                           dept.passRate >= 90
-                            ? "text-success-600"
+                            ? "bg-gradient-to-r from-success-400 to-success-600"
                             : dept.passRate >= 80
-                            ? "text-warning-600"
-                            : "text-danger-600"
+                            ? "bg-gradient-to-r from-warning-400 to-warning-600"
+                            : "bg-gradient-to-r from-danger-400 to-danger-600"
                         )}
-                      >
-                        {dept.passRate}%
-                      </span>
+                        style={{ width: `${barW}%` }}
+                      />
+                      <div
+                        className="absolute top-0 h-full w-px bg-white/50"
+                        style={{ left: `${passRatio * barW}%` }}
+                      />
                     </div>
                   </div>
-                  <div className="h-5 bg-slate-100 rounded-sm overflow-hidden relative">
-                    <div
-                      className={cn(
-                        "h-full",
-                        dept.passRate >= 90
-                          ? "bg-gradient-to-r from-success-400 to-success-600"
-                          : dept.passRate >= 80
-                          ? "bg-gradient-to-r from-warning-400 to-warning-600"
-                          : "bg-gradient-to-r from-danger-400 to-danger-600"
-                      )}
-                      style={{ width: `${barW}%` }}
-                    />
-                    <div
-                      className="absolute top-0 h-full w-px bg-white/50"
-                      style={{ left: `${(dept.passedCount / dept.totalCount) * barW}%` }}
-                    />
-                  </div>
-                </div>
-              );
-            })}
+                );
+              })
+            ) : (
+              <div className="flex flex-col items-center justify-center py-10 text-center">
+                <Users className="w-8 h-8 text-slate-300 mb-2" />
+                <p className="text-sm text-slate-400">当前筛选范围内暂无部门数据</p>
+              </div>
+            )}
           </div>
         </div>
 
@@ -649,8 +652,8 @@ export default function StatisticsPage() {
                 </tr>
               </thead>
               <tbody>
-                {displayClerkStats.length > 0
-                  ? displayClerkStats.map((r, idx) => (
+                {clerkStats.length > 0 ? (
+                  clerkStats.map((r, idx) => (
                       <tr key={r.name} className="table-row">
                         <td className="table-cell px-5">
                           <div className="flex items-center">
@@ -716,71 +719,14 @@ export default function StatisticsPage() {
                         </td>
                       </tr>
                     ))
-                  : mockReviewerStats.map((r, idx) => (
-                      <tr key={r.reviewer} className="table-row">
-                        <td className="table-cell px-5">
-                          <div className="flex items-center">
-                            <div className="w-7 h-7 bg-primary-100 text-primary-700 rounded-sm flex items-center justify-center text-xs font-medium">
-                              {r.reviewer.slice(-1)}
-                            </div>
-                            <span className="ml-2 text-sm text-slate-700">
-                              {r.reviewer}
-                            </span>
-                          </div>
-                        </td>
-                        <td className="table-cell px-5 text-right font-mono text-slate-800">
-                          {r.processedCount}
-                        </td>
-                        <td className="table-cell px-5 text-right">
-                          <span
-                            className={cn(
-                              "font-mono",
-                              r.avgProcessTime <= 38
-                                ? "text-success-600"
-                                : r.avgProcessTime <= 42
-                                ? "text-warning-600"
-                                : "text-danger-600"
-                            )}
-                          >
-                            {r.avgProcessTime}s
-                          </span>
-                        </td>
-                        <td className="table-cell px-5 text-right">
-                          <div className="flex items-center justify-end space-x-2">
-                            <div className="w-16 h-1.5 bg-slate-100 rounded-sm overflow-hidden">
-                              <div
-                                className={cn(
-                                  "h-full",
-                                  r.passRate >= 90
-                                    ? "bg-success-500"
-                                    : r.passRate >= 85
-                                    ? "bg-warning-500"
-                                    : "bg-danger-500"
-                                )}
-                                style={{ width: `${r.passRate}%` }}
-                              />
-                            </div>
-                            <span className="text-xs font-mono text-slate-700 w-12 text-right">
-                              {r.passRate}%
-                            </span>
-                          </div>
-                        </td>
-                        <td className="table-cell px-5 text-right">
-                          <span
-                            className={cn(
-                              "badge",
-                              idx === 0
-                                ? "badge-success"
-                                : idx <= 2
-                                ? "badge-info"
-                                : "badge-warning"
-                            )}
-                          >
-                            {idx === 0 ? "优秀" : idx <= 2 ? "良好" : "待提升"}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                ) : (
+                  <tr>
+                    <td colSpan={5} className="px-5 py-12 text-center">
+                      <Clock className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-sm text-slate-400">当前筛选范围内暂无录单员处理数据</p>
+                    </td>
+                  </tr>
+                )}
               </tbody>
             </table>
           </div>
@@ -959,6 +905,7 @@ export default function StatisticsPage() {
                                   { key: "票据状态", label: "票据状态" },
                                   { key: "处理人", label: "处理人" },
                                   { key: "复核结果", label: "复核结果" },
+                                  { key: "批次通过率", label: "批次通过率" },
                                 ]
                               )
                             }
@@ -970,115 +917,29 @@ export default function StatisticsPage() {
                       </tr>
                     );
                   })
-                : mockDepartmentStats.slice(0, 5).map((dept, idx) => {
-                    const rate = dept.passRate;
-                    const batchId = `BATCH-202606${10 + idx}-00${idx + 1}`;
-                    const reviewResult =
-                      rate >= 90
-                        ? "优良"
-                        : rate >= 80
-                        ? "合格"
-                        : "待改进";
-                    return (
-                      <tr key={dept.department + idx} className="table-row">
-                        <td className="table-cell px-5">
-                          <input
-                            type="checkbox"
-                            className="rounded-sm border-slate-300"
-                          />
-                        </td>
-                        <td className="table-cell px-5 font-mono text-xs text-primary-600">
-                          {batchId}
-                        </td>
-                        <td className="table-cell px-5 text-slate-700">
-                          2026年6月第{idx + 1}周-{dept.department}报销
-                        </td>
-                        <td className="table-cell px-5">{dept.department}</td>
-                        <td className="table-cell px-5 text-right font-mono text-slate-800">
-                          {dept.totalCount}
-                        </td>
-                        <td className="table-cell px-5 text-right font-mono text-success-600">
-                          {dept.passedCount}
-                        </td>
-                        <td className="table-cell px-5 text-right font-mono text-danger-600">
-                          {dept.rejectedCount}
-                        </td>
-                        <td className="table-cell px-5 text-right font-mono text-warning-600">
-                          {dept.pendingCount}
-                        </td>
-                        <td className="table-cell px-5">
-                          <div className="flex items-center justify-end space-x-2">
-                            <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                              <div
-                                className={cn(
-                                  "h-full rounded-full",
-                                  rate >= 90
-                                    ? "bg-success-500"
-                                    : rate >= 80
-                                    ? "bg-warning-500"
-                                    : "bg-danger-500"
-                                )}
-                                style={{ width: `${rate}%` }}
-                              />
-                            </div>
-                            <span
-                              className={cn(
-                                "text-xs font-mono font-medium w-12 text-right",
-                                rate >= 90
-                                  ? "text-success-600"
-                                  : rate >= 80
-                                  ? "text-warning-600"
-                                  : "text-danger-600"
-                              )}
-                            >
-                              {rate}%
-                            </span>
-                          </div>
-                        </td>
-                        <td className="table-cell px-5 text-center">
-                          <span
-                            className={cn(
-                              "text-xs font-medium",
-                              rate >= 90
-                                ? "text-success-600"
-                                : rate >= 80
-                                ? "text-warning-600"
-                                : "text-danger-600"
-                            )}
-                          >
-                            {reviewResult}
-                          </span>
-                        </td>
-                        <td className="table-cell px-5 text-right">
-                          <button
-                            className="btn-ghost text-xs"
-                            onClick={() =>
-                              exportToCSV(
-                                buildSingleBatchData(batchId),
-                                `批次_${batchId}_明细`,
-                                [
-                                  { key: "批次编号", label: "批次编号" },
-                                  { key: "批次名称", label: "批次名称" },
-                                  { key: "所属部门", label: "所属部门" },
-                                  { key: "票据编号", label: "票据编号" },
-                                  { key: "发票号码", label: "发票号码" },
-                                  { key: "票据类型", label: "票据类型" },
-                                  { key: "金额", label: "金额(元)" },
-                                  { key: "销售方", label: "销售方" },
-                                  { key: "票据状态", label: "票据状态" },
-                                  { key: "处理人", label: "处理人" },
-                                  { key: "复核结果", label: "复核结果" },
-                                ]
-                              )
-                            }
-                          >
-                            <Download className="w-3 h-3 mr-1" />
-                            导出
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                : (
+                  <tr>
+                    <td colSpan={11} className="px-5 py-12 text-center">
+                      <Inbox className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-sm text-slate-400">
+                        {deptFilter || batchFilter
+                          ? "当前筛选条件下没有匹配的批次"
+                          : "暂无批次数据，请先上传票据"}
+                      </p>
+                      {(deptFilter || batchFilter) && (
+                        <button
+                          className="mt-3 text-xs text-primary-600 hover:text-primary-800 font-medium"
+                          onClick={() => {
+                            setDeptFilter("");
+                            setBatchFilter("");
+                          }}
+                        >
+                          清除筛选条件
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )}
             </tbody>
           </table>
         </div>

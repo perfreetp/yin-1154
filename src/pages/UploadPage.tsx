@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   Upload,
   FolderPlus,
@@ -49,11 +50,11 @@ export default function UploadPage() {
     updateBatchProgress,
   } = useInvoiceStore();
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedBatch, setSelectedBatchFilter] = useState<string | null>(null);
   const [detailBatchId, setDetailBatchId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
+  const navigate = useNavigate();
 
   const generateInvoiceImage = (seed: number, type: string) => {
     const colors: Record<string, string> = {
@@ -241,9 +242,7 @@ export default function UploadPage() {
     });
   };
 
-  const filteredBatches = selectedBatchFilter
-    ? batches.filter((b) => b.batchId === selectedBatchFilter)
-    : batches;
+  const filteredBatches = batches;
 
   const getBatchInvoices = (batchId: string) =>
     invoices.filter((inv) => inv.batchId === batchId);
@@ -684,7 +683,7 @@ export default function UploadPage() {
                     onClick={() => {
                       setSelectedBatch(detailBatchId);
                       setDetailBatchId(null);
-                      window.location.hash = "#/verify";
+                      navigate("/verify");
                     }}
                   >
                     <ArrowRight className="w-3.5 h-3.5 mr-1.5" />
