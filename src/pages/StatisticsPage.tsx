@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   BarChart3,
   TrendingUp,
@@ -13,6 +13,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Minus,
+  X,
+  Building2,
 } from "lucide-react";
 import { useInvoiceStore } from "@/store";
 import {
@@ -30,6 +32,34 @@ import {
 export default function StatisticsPage() {
   const { invoices, batches } = useInvoiceStore();
   const [dateRange, setDateRange] = useState("7");
+  const [deptFilter, setDeptFilter] = useState<string>("");
+  const [batchFilter, setBatchFilter] = useState<string>("");
+
+  const departments = useMemo(() => {
+    const deptSet = new Set(batches.map((b) => b.department));
+    return Array.from(deptSet);
+  }, [batches]);
+
+  const filteredBatches = useMemo(() => {
+    return batches.filter((b) => {
+      if (deptFilter && b.department !== deptFilter) return false;
+      if (batchFilter && b.batchId !== batchFilter && b.batchName.indexOf(batchFilter) === -1) return false;
+      return true;
+    });
+  }, [batches, deptFilter, batchFilter]);
+
+  const filteredInvoices = useMemo(() => {
+    const batchIds = new Set(filteredBatches.map((b) => b.batchId));
+    return invoices.filter((inv) => batchIds.has(inv.batchId));
+  }, [invoices, filteredBatches]);
+
+  const getBatchPassRate = (batchId: string) => {
+    const batchInvoices = filteredInvoices.filter((i) => i.batchId === batchId);
+    const passed = batchInvoices.filter((i) => i.status === "passed").length;
+    return batchInvoices.length > 0
+      ? ((passed / batchInvoices.length) * 100).toFixed(2) + "%"
+      : "-";
+  };
 
   const exportToCSV = (
     data: Record<string, any>[],
@@ -57,9 +87,10 @@ export default function StatisticsPage() {
   };
 
   const buildFullReportData = () => {
-    return invoices.map((inv) => {
-      const batch = batches.find((b) => b.batchId === inv.batchId);
+    return filteredInvoices.map((inv) => {
+      const batch = filteredBatches.find((b) => b.batchId === inv.batchId);
       const lastException = inv.exceptions?.[inv.exceptions.length - 1];
+      const batchPassRate = getBatchPassRate(inv.batchId);
       return {
         批次编号: inv.batchId,
         批次名称: batch?.batchName || "-",
@@ -85,20 +116,24 @@ export default function StatisticsPage() {
         处理人: inv.reviewer || "-",
         处理时间: inv.reviewTime || "-",
         复核结果: inv.status === "passed" ? "通过" : inv.status === "rejected" ? "已退回" : inv.status === "exception" ? "异常待处理" : "处理中",
+        批次通过率: batchPassRate,
         退回原因: lastException?.rejectReason || "-",
       };
     });
   };
 
   const buildBatchData = () => {
-    return batches.map((batch) => {
-      const batchInvoices = invoices.filter((i) => i.batchId === batch.batchId);
+    return filteredBatches.map((batch) => {
+      const batchInvoices = filteredInvoices.filter((i) => i.batchId === batch.batchId);
       const passed = batchInvoices.filter((i) => i.status === "passed").length;
       const rejected = batchInvoices.filter((i) => i.status === "rejected").length;
       const pending = batchInvoices.length - passed - rejected;
       const passRate = batchInvoices.length > 0
         ? ((passed / batchInvoices.length) * 100).toFixed(2) + "%"
         : "-";
+      const exceptionCount = batchInvoices.filter(
+        (i) => i.status === "exception" || i.status === "pending_recheck"
+      ).length;
       return {
         批次编号: batch.batchId,
         批次名称: batch.batchName,
@@ -108,17 +143,36 @@ export default function StatisticsPage() {
         票据总数: batch.totalCount,
         已通过: passed,
         已退回: rejected,
+        异常待处理: exceptionCount,
         待处理: pending,
         通过率: passRate,
         批次状态: batch.status === "completed" ? "已完成" : "处理中",
+        复核结果: passRate !== "-" && Number(passRate) >= 90 ? "优良" : Number(passRate) >= 80 ? "合格" : "待改进",
       };
     });
   };
 
   const buildSingleBatchData = (batchId: string) => {
-    const batch = batches.find((b) => b.batchId === batchId);
-    const batchInvoices = invoices.filter((i) => i.batchId === batchId);
-    return batchInvoices.map((inv) => ({
+    const batch = filteredBatches.find((b) => b.batchId === batchId);
+    const batchInvoices = filteredInvoices.filter((i) => i.batchId === batchId);
+    const passed = batchInvoices.filter((i) => i.status === "passed").length;
+    const rejected = batchInvoices.filter((i) => i.status === "rejected").length;
+    const passRate = batchInvoices.length > 0
+      ? ((passed / batchInvoices.length) * 100).toFixed(2) + "%"
+      : "-";
+
+    const summaryRows = [
+      { 批次编号: batch?.batchId || "-", 批次名称: batch?.batchName || "-", 所属部门: batch?.department || "-", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
+      { 批次编号: "=== 批次汇总 ===", 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
+      { 批次编号: `票据总数: ${batchInvoices.length}`, 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
+      { 批次编号: `已通过: ${passed}`, 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
+      { 批次编号: `已退回: ${rejected}`, 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
+      { 批次编号: `通过率: ${passRate}`, 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
+      { 批次编号: "", 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
+      { 批次编号: "=== 票据明细 ===", 批次名称: "", 所属部门: "", 票据编号: "", 发票号码: "", 票据类型: "", 金额: "", 销售方: "", 票据状态: "", 处理人: "", 复核结果: "" },
+    ];
+
+    const detailRows = batchInvoices.map((inv) => ({
       批次编号: batch?.batchId || "-",
       批次名称: batch?.batchName || "-",
       所属部门: batch?.department || "-",
@@ -129,8 +183,10 @@ export default function StatisticsPage() {
       销售方: inv.fields.sellerName,
       票据状态: InvoiceStatusLabels[inv.status],
       处理人: inv.reviewer || "-",
-      复核结果: inv.status === "passed" ? "通过" : inv.status === "rejected" ? "已退回" : "处理中",
+      复核结果: inv.status === "passed" ? "通过" : inv.status === "rejected" ? "已退回" : inv.status === "exception" ? "异常待处理" : "处理中",
     }));
+
+    return [...summaryRows, ...detailRows];
   };
 
   const reportHeaders = [
@@ -156,6 +212,7 @@ export default function StatisticsPage() {
     { key: "处理人", label: "处理人" },
     { key: "处理时间", label: "处理时间" },
     { key: "复核结果", label: "复核结果" },
+    { key: "批次通过率", label: "批次通过率" },
     { key: "退回原因", label: "退回原因" },
   ];
 
@@ -168,21 +225,23 @@ export default function StatisticsPage() {
     { key: "票据总数", label: "票据总数" },
     { key: "已通过", label: "已通过" },
     { key: "已退回", label: "已退回" },
+    { key: "异常待处理", label: "异常待处理" },
     { key: "待处理", label: "待处理" },
     { key: "通过率", label: "通过率" },
     { key: "批次状态", label: "批次状态" },
+    { key: "复核结果", label: "复核结果" },
   ];
 
-  const totalProcessed = invoices.filter(
+  const totalProcessed = filteredInvoices.filter(
     (i) => i.status === "passed" || i.status === "rejected"
   ).length;
-  const totalPassed = invoices.filter((i) => i.status === "passed").length;
-  const totalRejected = invoices.filter((i) => i.status === "rejected").length;
+  const totalPassed = filteredInvoices.filter((i) => i.status === "passed").length;
+  const totalRejected = filteredInvoices.filter((i) => i.status === "rejected").length;
   const overallPassRate =
     totalProcessed > 0 ? ((totalPassed / totalProcessed) * 100).toFixed(1) : "0";
 
   const typeStats = Object.entries(
-    invoices.reduce((acc, inv) => {
+    filteredInvoices.reduce((acc, inv) => {
       if (!acc[inv.invoiceType])
         acc[inv.invoiceType] = { total: 0, passed: 0 };
       acc[inv.invoiceType].total++;
@@ -191,8 +250,71 @@ export default function StatisticsPage() {
     }, {} as Record<string, { total: number; passed: number }>)
   );
 
+  const deptStats = useMemo(() => {
+    const deptMap = new Map<string, { department: string; totalCount: number; passedCount: number; rejectedCount: number; pendingCount: number; passRate: number }>();
+    filteredBatches.forEach((batch) => {
+      const dept = batch.department;
+      if (!deptMap.has(dept)) {
+        deptMap.set(dept, {
+          department: dept,
+          totalCount: 0,
+          passedCount: 0,
+          rejectedCount: 0,
+          pendingCount: 0,
+          passRate: 0,
+        });
+      }
+      const stat = deptMap.get(dept)!;
+      const batchInvoices = filteredInvoices.filter((i) => i.batchId === batch.batchId);
+      stat.totalCount += batchInvoices.length;
+      stat.passedCount += batchInvoices.filter((i) => i.status === "passed").length;
+      stat.rejectedCount += batchInvoices.filter((i) => i.status === "rejected").length;
+      stat.pendingCount += batchInvoices.filter(
+        (i) => i.status === "uploading" || i.status === "recognizing" || i.status === "pending_review" || i.status === "reviewing" || i.status === "validating"
+      ).length;
+    });
+    const result = Array.from(deptMap.values()).map((d) => ({
+      ...d,
+      passRate: d.totalCount > 0 ? Math.round((d.passedCount / d.totalCount) * 100) : 0,
+    }));
+    result.sort((a, b) => b.totalCount - a.totalCount);
+    return result;
+  }, [filteredBatches, filteredInvoices]);
+
+  const clerkStats = useMemo(() => {
+    const clerkMap = new Map<string, { name: string; processed: number; passed: number; rejected: number; avgAccuracy: number }>();
+    filteredInvoices.forEach((inv) => {
+      if (inv.reviewer) {
+        if (!clerkMap.has(inv.reviewer)) {
+          clerkMap.set(inv.reviewer, {
+            name: inv.reviewer,
+            processed: 0,
+            passed: 0,
+            rejected: 0,
+            avgAccuracy: 0,
+          });
+        }
+        const stat = clerkMap.get(inv.reviewer)!;
+        stat.processed++;
+        if (inv.status === "passed") stat.passed++;
+        if (inv.status === "rejected") stat.rejected++;
+        stat.avgAccuracy += inv.confidence;
+      }
+    });
+    const result = Array.from(clerkMap.values()).map((c) => ({
+      ...c,
+      avgAccuracy: c.processed > 0 ? Math.round(c.avgAccuracy / c.processed) : 0,
+      passRate: c.processed > 0 ? Math.round((c.passed / c.processed) * 100) : 0,
+    }));
+    result.sort((a, b) => b.processed - a.processed);
+    return result;
+  }, [filteredInvoices]);
+
   const maxDailyCount = Math.max(...mockDailyStats.map((d) => d.processedCount));
-  const maxDeptCount = Math.max(...mockDepartmentStats.map((d) => d.totalCount));
+  const maxDeptCount = Math.max(...(deptStats.length > 0 ? deptStats : mockDepartmentStats).map((d) => d.totalCount));
+
+  const displayDeptStats = deptStats.length > 0 ? deptStats : mockDepartmentStats;
+  const displayClerkStats = clerkStats.length > 0 ? clerkStats : mockClerkStats;
 
   return (
     <div className="p-5 space-y-5 h-full overflow-auto">
@@ -220,10 +342,50 @@ export default function StatisticsPage() {
             </select>
             <ChevronDown className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
-          <button className="btn-outline">
-            <Filter className="w-3.5 h-3.5 mr-1.5" />
-            筛选
-          </button>
+          <div className="relative">
+            <Building2 className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <select
+              value={deptFilter}
+              onChange={(e) => setDeptFilter(e.target.value)}
+              className="pl-8 pr-8 py-1.5 text-sm bg-white border border-slate-200 rounded-sm text-slate-700 focus:outline-none focus:border-primary-400 appearance-none cursor-pointer"
+            >
+              <option value="">全部部门</option>
+              {departments.map((dept) => (
+                <option key={dept} value={dept}>
+                  {dept}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+          <div className="relative">
+            <Filter className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <select
+              value={batchFilter}
+              onChange={(e) => setBatchFilter(e.target.value)}
+              className="pl-8 pr-8 py-1.5 text-sm bg-white border border-slate-200 rounded-sm text-slate-700 focus:outline-none focus:border-primary-400 appearance-none cursor-pointer min-w-[180px]"
+            >
+              <option value="">全部批次</option>
+              {batches.map((b) => (
+                <option key={b.batchId} value={b.batchId}>
+                  {b.batchName}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+          {(deptFilter || batchFilter) && (
+            <button
+              className="btn-ghost text-xs px-2"
+              onClick={() => {
+                setDeptFilter("");
+                setBatchFilter("");
+              }}
+            >
+              <X className="w-3.5 h-3.5 mr-1" />
+              清除筛选
+            </button>
+          )}
           <button
             className="btn-primary"
             onClick={() => exportToCSV(buildFullReportData(), "票据处理明细报表", reportHeaders)}
@@ -419,7 +581,7 @@ export default function StatisticsPage() {
             </h3>
           </div>
           <div className="p-5 space-y-3">
-            {mockDepartmentStats.map((dept) => {
+            {displayDeptStats.map((dept) => {
               const barW = (dept.totalCount / maxDeptCount) * 100;
               return (
                 <div key={dept.department}>
@@ -481,77 +643,144 @@ export default function StatisticsPage() {
                 <tr>
                   <th className="table-header px-5 py-2.5">录单员</th>
                   <th className="table-header px-5 py-2.5 text-right">处理量</th>
-                  <th className="table-header px-5 py-2.5 text-right">平均耗时</th>
+                  <th className="table-header px-5 py-2.5 text-right">平均置信度</th>
                   <th className="table-header px-5 py-2.5 text-right">通过率</th>
                   <th className="table-header px-5 py-2.5 text-right w-24">效率评级</th>
                 </tr>
               </thead>
               <tbody>
-                {mockReviewerStats.map((r, idx) => (
-                  <tr key={r.reviewer} className="table-row">
-                    <td className="table-cell px-5">
-                      <div className="flex items-center">
-                        <div className="w-7 h-7 bg-primary-100 text-primary-700 rounded-sm flex items-center justify-center text-xs font-medium">
-                          {r.reviewer.slice(-1)}
-                        </div>
-                        <span className="ml-2 text-sm text-slate-700">
-                          {r.reviewer}
-                        </span>
-                      </div>
-                    </td>
-                    <td className="table-cell px-5 text-right font-mono text-slate-800">
-                      {r.processedCount}
-                    </td>
-                    <td className="table-cell px-5 text-right">
-                      <span
-                        className={cn(
-                          "font-mono",
-                          r.avgProcessTime <= 38
-                            ? "text-success-600"
-                            : r.avgProcessTime <= 42
-                            ? "text-warning-600"
-                            : "text-danger-600"
-                        )}
-                      >
-                        {r.avgProcessTime}s
-                      </span>
-                    </td>
-                    <td className="table-cell px-5 text-right">
-                      <div className="flex items-center justify-end space-x-2">
-                        <div className="w-16 h-1.5 bg-slate-100 rounded-sm overflow-hidden">
-                          <div
+                {displayClerkStats.length > 0
+                  ? displayClerkStats.map((r, idx) => (
+                      <tr key={r.name} className="table-row">
+                        <td className="table-cell px-5">
+                          <div className="flex items-center">
+                            <div className="w-7 h-7 bg-primary-100 text-primary-700 rounded-sm flex items-center justify-center text-xs font-medium">
+                              {r.name.slice(-1)}
+                            </div>
+                            <span className="ml-2 text-sm text-slate-700">
+                              {r.name}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="table-cell px-5 text-right font-mono text-slate-800">
+                          {r.processed}
+                        </td>
+                        <td className="table-cell px-5 text-right">
+                          <span
                             className={cn(
-                              "h-full",
-                              r.passRate >= 90
-                                ? "bg-success-500"
-                                : r.passRate >= 85
-                                ? "bg-warning-500"
-                                : "bg-danger-500"
+                              "font-mono",
+                              r.avgAccuracy >= 90
+                                ? "text-success-600"
+                                : r.avgAccuracy >= 80
+                                ? "text-warning-600"
+                                : "text-danger-600"
                             )}
-                            style={{ width: `${r.passRate}%` }}
-                          />
-                        </div>
-                        <span className="text-xs font-mono text-slate-700 w-12 text-right">
-                          {r.passRate}%
-                        </span>
-                      </div>
-                    </td>
-                    <td className="table-cell px-5 text-right">
-                      <span
-                        className={cn(
-                          "badge",
-                          idx === 0
-                            ? "badge-success"
-                            : idx <= 2
-                            ? "badge-info"
-                            : "badge-warning"
-                        )}
-                      >
-                        {idx === 0 ? "优秀" : idx <= 2 ? "良好" : "待提升"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
+                          >
+                            {r.avgAccuracy}%
+                            <span className="text-[10px] text-slate-400 ml-0.5">置信度</span>
+                          </span>
+                        </td>
+                        <td className="table-cell px-5 text-right">
+                          <div className="flex items-center justify-end space-x-2">
+                            <div className="w-16 h-1.5 bg-slate-100 rounded-sm overflow-hidden">
+                              <div
+                                className={cn(
+                                  "h-full",
+                                  r.passRate >= 90
+                                    ? "bg-success-500"
+                                    : r.passRate >= 85
+                                    ? "bg-warning-500"
+                                    : "bg-danger-500"
+                                )}
+                                style={{ width: `${r.passRate}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-mono text-slate-700 w-12 text-right">
+                              {r.passRate}%
+                            </span>
+                          </div>
+                        </td>
+                        <td className="table-cell px-5 text-right">
+                          <span
+                            className={cn(
+                              "badge",
+                              idx === 0
+                                ? "badge-success"
+                                : idx <= 2
+                                ? "badge-info"
+                                : "badge-warning"
+                            )}
+                          >
+                            {idx === 0 ? "优秀" : idx <= 2 ? "良好" : "待提升"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))
+                  : mockReviewerStats.map((r, idx) => (
+                      <tr key={r.reviewer} className="table-row">
+                        <td className="table-cell px-5">
+                          <div className="flex items-center">
+                            <div className="w-7 h-7 bg-primary-100 text-primary-700 rounded-sm flex items-center justify-center text-xs font-medium">
+                              {r.reviewer.slice(-1)}
+                            </div>
+                            <span className="ml-2 text-sm text-slate-700">
+                              {r.reviewer}
+                            </span>
+                          </div>
+                        </td>
+                        <td className="table-cell px-5 text-right font-mono text-slate-800">
+                          {r.processedCount}
+                        </td>
+                        <td className="table-cell px-5 text-right">
+                          <span
+                            className={cn(
+                              "font-mono",
+                              r.avgProcessTime <= 38
+                                ? "text-success-600"
+                                : r.avgProcessTime <= 42
+                                ? "text-warning-600"
+                                : "text-danger-600"
+                            )}
+                          >
+                            {r.avgProcessTime}s
+                          </span>
+                        </td>
+                        <td className="table-cell px-5 text-right">
+                          <div className="flex items-center justify-end space-x-2">
+                            <div className="w-16 h-1.5 bg-slate-100 rounded-sm overflow-hidden">
+                              <div
+                                className={cn(
+                                  "h-full",
+                                  r.passRate >= 90
+                                    ? "bg-success-500"
+                                    : r.passRate >= 85
+                                    ? "bg-warning-500"
+                                    : "bg-danger-500"
+                                )}
+                                style={{ width: `${r.passRate}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-mono text-slate-700 w-12 text-right">
+                              {r.passRate}%
+                            </span>
+                          </div>
+                        </td>
+                        <td className="table-cell px-5 text-right">
+                          <span
+                            className={cn(
+                              "badge",
+                              idx === 0
+                                ? "badge-success"
+                                : idx <= 2
+                                ? "badge-info"
+                                : "badge-warning"
+                            )}
+                          >
+                            {idx === 0 ? "优秀" : idx <= 2 ? "良好" : "待提升"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
               </tbody>
             </table>
           </div>
@@ -576,6 +805,25 @@ export default function StatisticsPage() {
             导出当前结果
           </button>
         </div>
+          <div className="px-5 py-2 bg-primary-50 border-b border-primary-100 text-xs text-primary-700 flex items-center justify-between">
+            <span>
+              当前筛选：共 <span className="font-semibold">{filteredBatches.length}</span> 个批次，
+              <span className="font-semibold">{filteredInvoices.length}</span> 张票据
+              {deptFilter && <> · 部门: {deptFilter}</>}
+              {batchFilter && <> · 批次: {batchFilter}</>}
+            </span>
+            {(deptFilter || batchFilter) && (
+              <button
+                className="text-primary-600 hover:text-primary-800 font-medium"
+                onClick={() => {
+                  setDeptFilter("");
+                  setBatchFilter("");
+                }}
+              >
+                清除筛选
+              </button>
+            )}
+          </div>
         <div className="overflow-x-auto">
           <table className="w-full">
             <thead>
@@ -589,15 +837,16 @@ export default function StatisticsPage() {
                 <th className="table-header px-5 py-2.5 text-right">总数</th>
                 <th className="table-header px-5 py-2.5 text-right">通过</th>
                 <th className="table-header px-5 py-2.5 text-right">退回</th>
-                <th className="table-header px-5 py-2.5 text-right">待处理</th>
+                <th className="table-header px-5 py-2.5 text-right">异常</th>
                 <th className="table-header px-5 py-2.5 text-right w-32">通过率</th>
+                <th className="table-header px-5 py-2.5 text-center">复核结果</th>
                 <th className="table-header px-5 py-2.5 text-right w-24">操作</th>
               </tr>
             </thead>
             <tbody>
-              {batches.length > 0
-                ? batches.map((batch) => {
-                    const batchInvoices = invoices.filter(
+              {filteredBatches.length > 0
+                ? filteredBatches.map((batch) => {
+                    const batchInvoices = filteredInvoices.filter(
                       (i) => i.batchId === batch.batchId
                     );
                     const passed = batchInvoices.filter(
@@ -606,11 +855,21 @@ export default function StatisticsPage() {
                     const rejected = batchInvoices.filter(
                       (i) => i.status === "rejected"
                     ).length;
-                    const pending = batchInvoices.length - passed - rejected;
+                    const exceptionCount = batchInvoices.filter(
+                      (i) =>
+                        i.status === "exception" || i.status === "pending_recheck"
+                    ).length;
+                    const pending = batchInvoices.length - passed - rejected - exceptionCount;
                     const rate =
                       batchInvoices.length > 0
                         ? Math.round((passed / batchInvoices.length) * 100)
                         : 0;
+                    const reviewResult =
+                      rate >= 90
+                        ? "优良"
+                        : rate >= 80
+                        ? "合格"
+                        : "待改进";
                     return (
                       <tr key={batch.batchId} className="table-row">
                         <td className="table-cell px-5">
@@ -635,8 +894,8 @@ export default function StatisticsPage() {
                         <td className="table-cell px-5 text-right font-mono text-danger-600">
                           {rejected}
                         </td>
-                        <td className="table-cell px-5 text-right font-mono text-slate-600">
-                          {pending}
+                        <td className="table-cell px-5 text-right font-mono text-warning-600">
+                          {exceptionCount > 0 ? exceptionCount : pending}
                         </td>
                         <td className="table-cell px-5">
                           <div className="flex items-center justify-end space-x-2">
@@ -666,6 +925,20 @@ export default function StatisticsPage() {
                               {rate}%
                             </span>
                           </div>
+                        </td>
+                        <td className="table-cell px-5 text-center">
+                          <span
+                            className={cn(
+                              "text-xs font-medium",
+                              rate >= 90
+                                ? "text-success-600"
+                                : rate >= 80
+                                ? "text-warning-600"
+                                : "text-danger-600"
+                            )}
+                          >
+                            {reviewResult}
+                          </span>
                         </td>
                         <td className="table-cell px-5 text-right">
                           <button
@@ -700,10 +973,19 @@ export default function StatisticsPage() {
                 : mockDepartmentStats.slice(0, 5).map((dept, idx) => {
                     const rate = dept.passRate;
                     const batchId = `BATCH-202606${10 + idx}-00${idx + 1}`;
+                    const reviewResult =
+                      rate >= 90
+                        ? "优良"
+                        : rate >= 80
+                        ? "合格"
+                        : "待改进";
                     return (
                       <tr key={dept.department + idx} className="table-row">
                         <td className="table-cell px-5">
-                          <input type="checkbox" className="rounded-sm border-slate-300" />
+                          <input
+                            type="checkbox"
+                            className="rounded-sm border-slate-300"
+                          />
                         </td>
                         <td className="table-cell px-5 font-mono text-xs text-primary-600">
                           {batchId}
@@ -752,6 +1034,20 @@ export default function StatisticsPage() {
                               {rate}%
                             </span>
                           </div>
+                        </td>
+                        <td className="table-cell px-5 text-center">
+                          <span
+                            className={cn(
+                              "text-xs font-medium",
+                              rate >= 90
+                                ? "text-success-600"
+                                : rate >= 80
+                                ? "text-warning-600"
+                                : "text-danger-600"
+                            )}
+                          >
+                            {reviewResult}
+                          </span>
                         </td>
                         <td className="table-cell px-5 text-right">
                           <button

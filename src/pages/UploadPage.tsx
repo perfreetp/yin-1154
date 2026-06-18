@@ -12,11 +12,22 @@ import {
   RefreshCw,
   Filter,
   ChevronDown,
+  ChevronRight,
   Inbox,
   Sparkles,
+  X,
+  ArrowRight,
+  Scan,
 } from "lucide-react";
 import { useInvoiceStore } from "@/store";
-import { InvoiceStatusLabels, InvoiceStatusColors, InvoiceType, type Invoice, type InvoiceBatch } from "@/types";
+import {
+  InvoiceStatusLabels,
+  InvoiceStatusColors,
+  InvoiceTypeLabels,
+  InvoiceType,
+  type Invoice,
+  type InvoiceBatch,
+} from "@/types";
 import { cn } from "@/lib/utils";
 
 interface UploadingFile {
@@ -28,9 +39,18 @@ interface UploadingFile {
 }
 
 export default function UploadPage() {
-  const { batches, invoices, addInvoices, addBatch, setSelectedInvoice } = useInvoiceStore();
+  const {
+    batches,
+    invoices,
+    addInvoices,
+    addBatch,
+    setSelectedInvoice,
+    setSelectedBatch,
+    updateBatchProgress,
+  } = useInvoiceStore();
   const [isDragging, setIsDragging] = useState(false);
-  const [selectedBatch, setSelectedBatch] = useState<string | null>(null);
+  const [selectedBatch, setSelectedBatchFilter] = useState<string | null>(null);
+  const [detailBatchId, setDetailBatchId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
   const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
@@ -169,6 +189,8 @@ export default function UploadPage() {
     setUploadingFiles((prev) => [...prev, ...newFiles]);
 
     const createdInvoices: Invoice[] = [];
+    let successCount = 0;
+    let failCount = 0;
 
     newFiles.forEach((f, idx) => {
       let progress = 0;
@@ -193,13 +215,22 @@ export default function UploadPage() {
               )
             );
             if (isSuccess) {
-              const newInvoice = createInvoiceFromUpload(f.id, f.name, newBatchId, seed + idx);
+              const newInvoice = createInvoiceFromUpload(
+                f.id,
+                f.name,
+                newBatchId,
+                seed + idx
+              );
               createdInvoices.push(newInvoice);
               addInvoices([newInvoice]);
               if (createdInvoices.length === 1) {
                 setSelectedInvoice(newInvoice.invoiceId);
               }
+              successCount++;
+            } else {
+              failCount++;
             }
+            updateBatchProgress(newBatchId, isSuccess ? 1 : 0, isSuccess ? 0 : 1);
           }, 1500 + idx * 300);
         } else {
           setUploadingFiles((prev) =>
@@ -210,8 +241,8 @@ export default function UploadPage() {
     });
   };
 
-  const filteredBatches = selectedBatch
-    ? batches.filter((b) => b.batchId === selectedBatch)
+  const filteredBatches = selectedBatchFilter
+    ? batches.filter((b) => b.batchId === selectedBatchFilter)
     : batches;
 
   const getBatchInvoices = (batchId: string) =>
@@ -490,7 +521,11 @@ export default function UploadPage() {
                     </td>
                     <td className="table-cell px-4 text-right">
                       <div className="flex items-center justify-end space-x-0.5">
-                        <button className="btn-ghost p-1.5" title="查看详情">
+                        <button
+                          className="btn-ghost p-1.5"
+                          title="查看详情"
+                          onClick={() => setDetailBatchId(batch.batchId)}
+                        >
                           <Eye className="w-4 h-4" />
                         </button>
                         <button className="btn-ghost p-1.5" title="删除">
@@ -508,10 +543,36 @@ export default function UploadPage() {
 
       <div className="grid grid-cols-4 gap-4">
         {[
-          { label: "待识别", count: 18, icon: Clock, color: "text-primary-600", bg: "bg-primary-50" },
-          { label: "识别完成", count: 124, icon: CheckCircle2, color: "text-success-600", bg: "bg-success-50" },
-          { label: "识别异常", count: 5, icon: XCircle, color: "text-danger-600", bg: "bg-danger-50" },
-          { label: "本月上传", count: 147, icon: Inbox, color: "text-slate-600", bg: "bg-slate-100" },
+          {
+            label: "待校对",
+            count: invoices.filter((i) => i.status === "pending_review").length,
+            icon: Clock,
+            color: "text-primary-600",
+            bg: "bg-primary-50",
+          },
+          {
+            label: "已通过",
+            count: invoices.filter((i) => i.status === "passed").length,
+            icon: CheckCircle2,
+            color: "text-success-600",
+            bg: "bg-success-50",
+          },
+          {
+            label: "异常/退回",
+            count: invoices.filter(
+              (i) => i.status === "exception" || i.status === "rejected"
+            ).length,
+            icon: XCircle,
+            color: "text-danger-600",
+            bg: "bg-danger-50",
+          },
+          {
+            label: "票据总数",
+            count: invoices.length,
+            icon: Inbox,
+            color: "text-slate-600",
+            bg: "bg-slate-100",
+          },
         ].map((stat) => (
           <div key={stat.label} className="card p-4 flex items-center">
             <div className={`w-10 h-10 ${stat.bg} rounded-sm flex items-center justify-center`}>
@@ -524,6 +585,211 @@ export default function UploadPage() {
           </div>
         ))}
       </div>
+
+      {detailBatchId && (() => {
+        const batch = batches.find((b) => b.batchId === detailBatchId);
+        const batchInvoices = getBatchInvoices(detailBatchId);
+        const passedCount = batchInvoices.filter((i) => i.status === "passed").length;
+        const pendingCount = batchInvoices.filter(
+          (i) => i.status === "pending_review" || i.status === "reviewing"
+        ).length;
+        const exceptionCount = batchInvoices.filter(
+          (i) => i.status === "exception" || i.status === "rejected"
+        ).length;
+        const passRate =
+          batchInvoices.length > 0
+            ? ((passedCount / batchInvoices.length) * 100).toFixed(1)
+            : "0";
+
+        if (!batch) return null;
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 animate-fade-in">
+            <div className="bg-white rounded-sm shadow-lg w-[900px] max-h-[85vh] flex flex-col animate-slide-up">
+              <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between flex-shrink-0">
+                <div>
+                  <h3 className="text-base font-semibold text-slate-800 flex items-center">
+                    <Scan className="w-5 h-5 mr-2 text-primary-600" />
+                    批次详情
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-1">
+                    {batch.batchId} · {batch.batchName}
+                  </p>
+                </div>
+                <button
+                  className="btn-ghost p-1.5"
+                  onClick={() => setDetailBatchId(null)}
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="px-5 py-3 bg-slate-50 border-b border-slate-200 flex items-center space-x-6 flex-shrink-0">
+                <div>
+                  <p className="text-xs text-slate-500">所属部门</p>
+                  <p className="text-sm font-medium text-slate-700 mt-0.5">
+                    {batch.department}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">上传人</p>
+                  <p className="text-sm font-medium text-slate-700 mt-0.5">
+                    {batch.uploader}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">上传时间</p>
+                  <p className="text-sm font-medium text-slate-700 mt-0.5">
+                    {batch.uploadTime}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">票据总数</p>
+                  <p className="text-sm font-mono font-semibold text-slate-800 mt-0.5">
+                    {batch.totalCount} 张
+                  </p>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500">通过率</p>
+                  <p className="text-sm font-mono font-semibold text-success-600 mt-0.5">
+                    {passRate}%
+                  </p>
+                </div>
+                <div className="ml-auto">
+                  <span
+                    className={cn(
+                      "badge",
+                      batch.status === "completed" ? "badge-success" : "badge-info"
+                    )}
+                  >
+                    {batch.status === "completed" ? "已完成" : "处理中"}
+                  </span>
+                </div>
+              </div>
+
+              <div className="px-5 py-2.5 border-b border-slate-200 bg-white flex items-center space-x-4 text-xs flex-shrink-0">
+                <span className="text-slate-500">
+                  待校对: <span className="font-medium text-primary-600">{pendingCount}</span>
+                </span>
+                <span className="text-slate-500">
+                  已通过: <span className="font-medium text-success-600">{passedCount}</span>
+                </span>
+                <span className="text-slate-500">
+                  异常/退回:{" "}
+                  <span className="font-medium text-danger-600">{exceptionCount}</span>
+                </span>
+                <div className="ml-auto flex items-center space-x-2">
+                  <button
+                    className="btn-primary text-xs"
+                    onClick={() => {
+                      setSelectedBatch(detailBatchId);
+                      setDetailBatchId(null);
+                      window.location.hash = "#/verify";
+                    }}
+                  >
+                    <ArrowRight className="w-3.5 h-3.5 mr-1.5" />
+                    去识别校对台处理此批次
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-auto">
+                <table className="w-full">
+                  <thead className="sticky top-0 bg-slate-50 z-10">
+                    <tr>
+                      <th className="table-header px-4 py-2.5 text-left w-14">
+                        缩略图
+                      </th>
+                      <th className="table-header px-4 py-2.5 text-left">
+                        票据编号
+                      </th>
+                      <th className="table-header px-4 py-2.5 text-left">
+                        发票号码
+                      </th>
+                      <th className="table-header px-4 py-2.5 text-left">
+                        类型
+                      </th>
+                      <th className="table-header px-4 py-2.5 text-right">
+                        金额
+                      </th>
+                      <th className="table-header px-4 py-2.5 text-left">
+                        销售方
+                      </th>
+                      <th className="table-header px-4 py-2.5 text-center">
+                        状态
+                      </th>
+                      <th className="table-header px-4 py-2.5 text-center">
+                        置信度
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {batchInvoices.length > 0 ? (
+                      batchInvoices.map((inv) => (
+                        <tr
+                          key={inv.invoiceId}
+                          className="hover:bg-slate-50 transition-colors cursor-pointer"
+                          onClick={() => {
+                            setSelectedInvoice(inv.invoiceId);
+                            setDetailBatchId(null);
+                            window.location.hash = "#/verify";
+                          }}
+                        >
+                          <td className="px-4 py-2.5">
+                            <img
+                              src={inv.thumbnailUrl}
+                              alt="票据"
+                              className="w-10 h-14 object-cover rounded-sm border border-slate-200"
+                            />
+                          </td>
+                          <td className="px-4 py-2.5 font-mono text-xs text-primary-600">
+                            {inv.invoiceId}
+                          </td>
+                          <td className="px-4 py-2.5 text-sm text-slate-700 font-mono">
+                            {inv.fields.invoiceNumber}
+                          </td>
+                          <td className="px-4 py-2.5 text-sm text-slate-600">
+                            {InvoiceTypeLabels[inv.invoiceType]}
+                          </td>
+                          <td className="px-4 py-2.5 text-sm font-mono text-right text-slate-800 font-medium">
+                            ¥{inv.fields.totalAmount.toFixed(2)}
+                          </td>
+                          <td className="px-4 py-2.5 text-sm text-slate-600 max-w-[140px] truncate">
+                            {inv.fields.sellerName}
+                          </td>
+                          <td className="px-4 py-2.5 text-center">
+                            <span
+                              className={cn(
+                                "badge badge-sm",
+                                InvoiceStatusColors[inv.status]
+                              )}
+                            >
+                              {InvoiceStatusLabels[inv.status]}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2.5 text-center text-sm font-mono text-slate-600">
+                            {(inv.confidence * 100).toFixed(0)}%
+                          </td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td
+                          colSpan={8}
+                          className="px-4 py-10 text-center text-slate-400 text-sm"
+                        >
+                          <Inbox className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                          暂无票据数据
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

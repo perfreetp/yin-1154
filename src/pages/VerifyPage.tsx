@@ -11,6 +11,12 @@ import {
   FileText,
   ArrowRight,
   Layers,
+  Filter,
+  ChevronDown,
+  CheckSquare,
+  Square,
+  Send,
+  X,
 } from "lucide-react";
 import { useInvoiceStore } from "@/store";
 import {
@@ -44,25 +50,65 @@ const invoiceTypeOptions: InvoiceType[] = [
 export default function VerifyPage() {
   const {
     invoices,
+    batches,
     selectedInvoiceId,
     setSelectedInvoice,
     updateInvoiceFields,
     updateInvoiceStatus,
     updateInvoiceType,
+    selectedBatchId,
+    setSelectedBatch,
+    sendToValidate,
   } = useInvoiceStore();
 
   const [zoom, setZoom] = useState(100);
   const [rotation, setRotation] = useState(0);
   const [editedFields, setEditedFields] = useState<Set<string>>(new Set());
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   const pendingInvoices = invoices.filter(
-    (inv) => inv.status === "pending_review" || inv.status === "reviewing"
+    (inv) =>
+      (inv.status === "pending_review" || inv.status === "reviewing") &&
+      (!selectedBatchId || inv.batchId === selectedBatchId)
   );
   const currentIndex = pendingInvoices.findIndex(
     (inv) => inv.invoiceId === selectedInvoiceId
   );
   const selectedInvoice =
     pendingInvoices[currentIndex >= 0 ? currentIndex : 0] || pendingInvoices[0];
+
+  const allSelected =
+    pendingInvoices.length > 0 &&
+    pendingInvoices.every((inv) => selectedIds.has(inv.invoiceId));
+  const someSelected =
+    pendingInvoices.some((inv) => selectedIds.has(inv.invoiceId)) &&
+    !allSelected;
+
+  const toggleSelectAll = () => {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(pendingInvoices.map((inv) => inv.invoiceId)));
+    }
+  };
+
+  const toggleSelectOne = (invoiceId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(invoiceId)) {
+        next.delete(invoiceId);
+      } else {
+        next.add(invoiceId);
+      }
+      return next;
+    });
+  };
+
+  const batchSendToValidate = () => {
+    if (selectedIds.size === 0) return;
+    sendToValidate(Array.from(selectedIds));
+    setSelectedIds(new Set());
+  };
 
   const handlePrev = () => {
     if (currentIndex > 0) {
@@ -118,15 +164,73 @@ export default function VerifyPage() {
 
   return (
     <div className="flex h-full">
-      <div className="w-64 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
-        <div className="px-4 py-3 border-b border-slate-200 bg-slate-50">
+      <div className="w-72 bg-white border-r border-slate-200 flex flex-col flex-shrink-0">
+        <div className="px-3 py-3 border-b border-slate-200 bg-slate-50 space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-slate-700">
               待校对队列
             </span>
             <span className="badge badge-info">{pendingInvoices.length}</span>
           </div>
+          <div className="relative">
+            <Filter className="w-3.5 h-3.5 absolute left-2 top-1/2 -translate-y-1/2 text-slate-400" />
+            <select
+              value={selectedBatchId || ""}
+              onChange={(e) => {
+                setSelectedBatch(e.target.value || null);
+                setSelectedIds(new Set());
+              }}
+              className="w-full pl-7 pr-7 py-1.5 text-xs bg-white border border-slate-200 rounded-sm text-slate-700 focus:outline-none focus:border-primary-400 appearance-none cursor-pointer"
+            >
+              <option value="">全部批次</option>
+              {batches.map((b) => (
+                <option key={b.batchId} value={b.batchId}>
+                  {b.batchName} ({b.totalCount}张)
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="w-3.5 h-3.5 absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+          {selectedBatchId && (
+            <div className="flex items-center justify-between">
+              <button
+                className="text-[11px] text-primary-600 hover:text-primary-700 flex items-center"
+                onClick={() => {
+                  setSelectedBatch(null);
+                  setSelectedIds(new Set());
+                }}
+              >
+                <X className="w-3 h-3 mr-0.5" />
+                清除筛选
+              </button>
+              <span className="text-[10px] text-slate-400 font-mono">
+                {selectedBatchId}
+              </span>
+            </div>
+          )}
         </div>
+
+        {pendingInvoices.length > 0 && (
+          <div className="px-3 py-2 border-b border-slate-200 bg-white flex items-center justify-between">
+            <button
+              className="flex items-center text-xs text-slate-600 hover:text-primary-600"
+              onClick={toggleSelectAll}
+            >
+              {allSelected ? (
+                <CheckSquare className="w-4 h-4 text-primary-600 mr-1.5" />
+              ) : someSelected ? (
+                <CheckSquare className="w-4 h-4 text-primary-400 mr-1.5" />
+              ) : (
+                <Square className="w-4 h-4 text-slate-400 mr-1.5" />
+              )}
+              {allSelected ? "取消全选" : "全选"}
+            </button>
+            <span className="text-[11px] text-slate-500">
+              已选 <span className="font-medium text-primary-600">{selectedIds.size}</span> 张
+            </span>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto p-2 space-y-1">
           {pendingInvoices.map((inv, idx) => (
             <button
@@ -136,13 +240,28 @@ export default function VerifyPage() {
                 setEditedFields(new Set());
               }}
               className={cn(
-                "w-full text-left p-2 rounded-sm transition-all group",
-                inv.invoiceId === selectedInvoice.invoiceId
+                "w-full text-left p-2 rounded-sm transition-all group relative",
+                inv.invoiceId === selectedInvoice?.invoiceId
                   ? "bg-primary-50 border border-primary-200"
                   : "hover:bg-slate-50 border border-transparent"
               )}
             >
-              <div className="flex items-start space-x-2">
+              <div className="absolute top-2 left-2 z-10">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleSelectOne(inv.invoiceId);
+                  }}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity"
+                >
+                  {selectedIds.has(inv.invoiceId) ? (
+                    <CheckSquare className="w-4 h-4 text-primary-600" />
+                  ) : (
+                    <Square className="w-4 h-4 text-slate-300 hover:text-primary-400" />
+                  )}
+                </button>
+              </div>
+              <div className="flex items-start space-x-2 ml-5">
                 <div className="w-12 h-16 bg-slate-100 rounded-sm overflow-hidden flex-shrink-0 border border-slate-200">
                   <img
                     src={inv.thumbnailUrl}
@@ -155,7 +274,7 @@ export default function VerifyPage() {
                     <span className="text-xs font-mono text-slate-600">
                       #{idx + 1}
                     </span>
-                    <span className={cn("badge", InvoiceStatusColors[inv.status])}>
+                    <span className={cn("badge badge-sm", InvoiceStatusColors[inv.status])}>
                       {InvoiceStatusLabels[inv.status]}
                     </span>
                   </div>
@@ -173,6 +292,18 @@ export default function VerifyPage() {
             </button>
           ))}
         </div>
+
+        {selectedIds.size > 0 && (
+          <div className="px-3 py-3 border-t border-slate-200 bg-primary-50 flex-shrink-0">
+            <button
+              className="btn-primary w-full text-xs"
+              onClick={batchSendToValidate}
+            >
+              <Send className="w-3.5 h-3.5 mr-1.5" />
+              批量送验真 ({selectedIds.size}张)
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="flex-1 flex flex-col min-w-0 bg-slate-100">

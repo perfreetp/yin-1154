@@ -38,10 +38,14 @@ interface InvoiceState {
   addInvoices: (invoices: Invoice[]) => void;
   addBatch: (batch: InvoiceBatch) => void;
   updateBatchProcessed: (batchId: string) => void;
+  updateBatchProgress: (batchId: string, successCount: number, failCount: number) => void;
   rejectInvoice: (invoiceId: string, templateId?: string, reason?: string) => void;
   rejectToException: (invoiceId: string, reason?: string) => void;
   passInvoice: (invoiceId: string) => void;
   sendToRecheck: (invoiceId: string) => void;
+  sendToValidate: (invoiceIds: string[]) => void;
+  batchPass: (invoiceIds: string[]) => void;
+  batchReject: (invoiceIds: string[], reason?: string) => void;
 }
 
 export const useInvoiceStore = create<InvoiceState>((set, get) => ({
@@ -181,11 +185,125 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
   },
 
   passInvoice: (invoiceId: string) => {
-    get().updateInvoiceStatus(invoiceId, "passed");
+    const now = new Date().toLocaleString("zh-CN");
+    const newRecord: ExceptionRecord = {
+      recordId: `EXC-${Date.now()}`,
+      invoiceId,
+      exceptionType: "复核通过",
+      description: "票据复核通过，进入已通过状态",
+      operator: "当前录单员",
+      createTime: now,
+    };
+    set((state) => ({
+      invoices: state.invoices.map((inv) =>
+        inv.invoiceId === invoiceId
+          ? {
+              ...inv,
+              status: "passed",
+              validation: { ...inv.validation, overallStatus: "passed" },
+              reviewer: "当前录单员",
+              reviewTime: now,
+              exceptions: [...(inv.exceptions || []), newRecord],
+            }
+          : inv
+      ),
+    }));
   },
 
   sendToRecheck: (invoiceId: string) => {
-    get().updateInvoiceStatus(invoiceId, "pending_recheck");
+    const now = new Date().toLocaleString("zh-CN");
+    const newRecord: ExceptionRecord = {
+      recordId: `EXC-${Date.now()}`,
+      invoiceId,
+      exceptionType: "提交复核",
+      description: "从异常池提交至复核流程",
+      operator: "当前录单员",
+      createTime: now,
+    };
+    set((state) => ({
+      invoices: state.invoices.map((inv) =>
+        inv.invoiceId === invoiceId
+          ? {
+              ...inv,
+              status: "pending_recheck",
+              validation: { ...inv.validation, overallStatus: "pending_recheck" },
+              reviewer: "当前录单员",
+              reviewTime: now,
+              exceptions: [...(inv.exceptions || []), newRecord],
+            }
+          : inv
+      ),
+    }));
+  },
+
+  updateBatchProgress: (batchId: string, successCount: number, failCount: number) =>
+    set((state) => ({
+      batches: state.batches.map((b) =>
+        b.batchId === batchId
+          ? {
+              ...b,
+              processedCount: Math.min(b.processedCount + successCount + failCount, b.totalCount),
+              status:
+                b.processedCount + successCount + failCount >= b.totalCount
+                  ? "completed"
+                  : "processing",
+            }
+          : b
+      ),
+    })),
+
+  sendToValidate: (invoiceIds: string[]) =>
+    set((state) => ({
+      invoices: state.invoices.map((inv) =>
+        invoiceIds.includes(inv.invoiceId)
+          ? {
+              ...inv,
+              status: "validating",
+              validation: { ...inv.validation, overallStatus: "validating" },
+            }
+          : inv
+      ),
+    })),
+
+  batchPass: (invoiceIds: string[]) =>
+    set((state) => ({
+      invoices: state.invoices.map((inv) =>
+        invoiceIds.includes(inv.invoiceId)
+          ? {
+              ...inv,
+              status: "passed",
+              validation: { ...inv.validation, overallStatus: "passed" },
+              reviewer: "当前录单员",
+              reviewTime: new Date().toLocaleString("zh-CN"),
+            }
+          : inv
+      ),
+    })),
+
+  batchReject: (invoiceIds: string[], reason?: string) => {
+    const now = new Date().toLocaleString("zh-CN");
+    set((state) => ({
+      invoices: state.invoices.map((inv) => {
+        if (!invoiceIds.includes(inv.invoiceId)) return inv;
+        const newException: ExceptionRecord = {
+          recordId: `EXC-${Date.now()}-${inv.invoiceId}`,
+          invoiceId: inv.invoiceId,
+          exceptionType: "批量退回",
+          description: reason || "批量处理退回",
+          rejectReason: reason,
+          operator: "当前录单员",
+          createTime: now,
+        };
+        return {
+          ...inv,
+          status: "rejected",
+          validation: { ...inv.validation, overallStatus: "rejected" },
+          exceptions: [...(inv.exceptions || []), newException],
+          reviewer: "当前录单员",
+          reviewTime: now,
+        };
+      }),
+    }));
   },
 }));
 

@@ -421,42 +421,130 @@ export default function ExceptionsPage() {
                   </div>
                 </div>
 
-                {selectedInvoice.exceptions &&
-                  selectedInvoice.exceptions.length > 0 && (
-                    <div>
-                      <h4 className="text-sm font-medium text-slate-700 mb-2 flex items-center">
-                        <MessageSquare className="w-4 h-4 mr-1.5" />
-                        历史处理记录
-                      </h4>
-                      <div className="space-y-2">
-                        {selectedInvoice.exceptions.map((exc) => (
-                          <div
-                            key={exc.recordId}
-                            className="p-3 bg-slate-50 rounded-sm border border-slate-200"
-                          >
-                            <div className="flex items-center justify-between text-xs text-slate-500">
-                              <span className="flex items-center">
-                                <User className="w-3 h-3 mr-1" />
-                                {exc.operator}
-                              </span>
-                              <span className="flex items-center">
-                                <Clock className="w-3 h-3 mr-1" />
-                                {exc.createTime}
-                              </span>
-                            </div>
-                            <p className="text-sm text-slate-700 mt-1.5">
-                              {exc.description}
-                            </p>
-                            {exc.rejectReason && (
-                              <p className="text-xs text-danger-600 mt-1 bg-danger-50 p-2 rounded-sm">
-                                退回原因: {exc.rejectReason}
-                              </p>
-                            )}
-                          </div>
-                        ))}
+                {(() => {
+                  const timelineRecords = [
+                    ...(selectedInvoice.exceptions || []),
+                  ];
+                  if (
+                    !timelineRecords.some(
+                      (r) => r.exceptionType === "初始识别"
+                    ) &&
+                    selectedInvoice.status !== "uploading" &&
+                    selectedInvoice.status !== "recognizing"
+                  ) {
+                    timelineRecords.unshift({
+                      recordId: "init",
+                      invoiceId: selectedInvoice.invoiceId,
+                      exceptionType: "初始识别",
+                      description: "票据完成初始识别，进入待校对队列",
+                      operator: "OCR系统",
+                      createTime: selectedInvoice.reviewTime || "系统自动",
+                    });
+                  }
+                  return timelineRecords.length > 0;
+                })() && (
+                  <div>
+                    <h4 className="text-sm font-medium text-slate-700 mb-3 flex items-center">
+                      <Clock className="w-4 h-4 mr-1.5 text-primary-600" />
+                      处理时间线
+                    </h4>
+                    <div className="relative">
+                      <div className="absolute left-[11px] top-2 bottom-2 w-px bg-slate-200" />
+                      <div className="space-y-4">
+                        {(selectedInvoice.exceptions || [])
+                          .slice()
+                          .reverse()
+                          .map((exc, idx, arr) => {
+                            const isLatest = idx === 0;
+                            const typeColor: Record<string, string> = {
+                              验真退回: "text-danger-500 bg-danger-100",
+                              人工退回: "text-danger-500 bg-danger-100",
+                              批量退回: "text-danger-500 bg-danger-100",
+                              复核通过: "text-success-500 bg-success-100",
+                              提交复核: "text-warning-500 bg-warning-100",
+                              异常处理: "text-warning-500 bg-warning-100",
+                            };
+                            const dotColor = typeColor[exc.exceptionType] || "text-slate-500 bg-slate-100";
+                            return (
+                              <div key={exc.recordId} className="relative pl-8">
+                                <div
+                                  className={cn(
+                                    "absolute left-0 top-0.5 w-6 h-6 rounded-full flex items-center justify-center",
+                                    dotColor.split(" ")[1]
+                                  )}
+                                >
+                                  {exc.exceptionType.includes("退回") ? (
+                                    <FileX
+                                      className={cn(
+                                        "w-3 h-3",
+                                        dotColor.split(" ")[0]
+                                      )}
+                                    />
+                                  ) : exc.exceptionType.includes("通过") ? (
+                                    <CheckCircle2
+                                      className={cn(
+                                        "w-3 h-3",
+                                        dotColor.split(" ")[0]
+                                      )}
+                                    />
+                                  ) : (
+                                    <Send
+                                      className={cn(
+                                        "w-3 h-3",
+                                        dotColor.split(" ")[0]
+                                      )}
+                                    />
+                                  )}
+                                </div>
+                                {isLatest && (
+                                  <span className="absolute left-7 top-0 text-[10px] bg-primary-100 text-primary-700 px-1.5 py-0.5 rounded-sm">
+                                    最新
+                                  </span>
+                                )}
+                                <div className="pt-0.5">
+                                  <div className="flex items-center space-x-2">
+                                    <span
+                                      className={cn(
+                                        "text-xs font-medium",
+                                        exc.exceptionType.includes("退回")
+                                          ? "text-danger-700"
+                                          : exc.exceptionType.includes("通过")
+                                          ? "text-success-700"
+                                          : "text-warning-700"
+                                      )}
+                                    >
+                                      {exc.exceptionType}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-600 mt-1">
+                                    {exc.description}
+                                  </p>
+                                  {exc.rejectReason && (
+                                    <div className="mt-2 p-2.5 bg-danger-50 border border-danger-100 rounded-sm">
+                                      <p className="text-xs text-danger-600">
+                                        <span className="font-medium">退回原因：</span>
+                                        {exc.rejectReason}
+                                      </p>
+                                    </div>
+                                  )}
+                                  <div className="flex items-center space-x-3 mt-2 text-[11px] text-slate-400">
+                                    <span className="flex items-center">
+                                      <User className="w-3 h-3 mr-1" />
+                                      {exc.operator}
+                                    </span>
+                                    <span className="flex items-center">
+                                      <Clock className="w-3 h-3 mr-1" />
+                                      {exc.createTime}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
                       </div>
                     </div>
-                  )}
+                  </div>
+                )}
               </div>
             </div>
             <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-end space-x-2">
