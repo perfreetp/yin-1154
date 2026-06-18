@@ -31,11 +31,15 @@ interface InvoiceState {
   getSelectedInvoice: () => Invoice | undefined;
   updateInvoiceStatus: (invoiceId: string, status: InvoiceStatus) => void;
   updateInvoiceFields: (invoiceId: string, fields: Partial<Invoice["fields"]>) => void;
+  updateInvoiceType: (invoiceId: string, type: Invoice["invoiceType"]) => void;
   setSelectedInvoice: (invoiceId: string | null) => void;
   setSelectedBatch: (batchId: string | null) => void;
   setFilters: (filters: Partial<InvoiceState["filters"]>) => void;
   addInvoices: (invoices: Invoice[]) => void;
+  addBatch: (batch: InvoiceBatch) => void;
+  updateBatchProcessed: (batchId: string) => void;
   rejectInvoice: (invoiceId: string, templateId?: string, reason?: string) => void;
+  rejectToException: (invoiceId: string, reason?: string) => void;
   passInvoice: (invoiceId: string) => void;
   sendToRecheck: (invoiceId: string) => void;
 }
@@ -88,6 +92,13 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
       ),
     })),
 
+  updateInvoiceType: (invoiceId: string, type: Invoice["invoiceType"]) =>
+    set((state) => ({
+      invoices: state.invoices.map((inv) =>
+        inv.invoiceId === invoiceId ? { ...inv, invoiceType: type } : inv
+      ),
+    })),
+
   setSelectedInvoice: (invoiceId: string | null) =>
     set({ selectedInvoiceId: invoiceId }),
 
@@ -98,6 +109,23 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
 
   addInvoices: (newInvoices: Invoice[]) =>
     set((state) => ({ invoices: [...newInvoices, ...state.invoices] })),
+
+  addBatch: (batch: InvoiceBatch) =>
+    set((state) => ({ batches: [batch, ...state.batches] })),
+
+  updateBatchProcessed: (batchId: string) =>
+    set((state) => ({
+      batches: state.batches.map((b) =>
+        b.batchId === batchId
+          ? {
+              ...b,
+              processedCount: Math.min(b.processedCount + 1, b.totalCount),
+              status:
+                b.processedCount + 1 >= b.totalCount ? "completed" : "processing",
+            }
+          : b
+      ),
+    })),
 
   rejectInvoice: (invoiceId: string, templateId?: string, reason?: string) => {
     const newException: ExceptionRecord = {
@@ -117,6 +145,32 @@ export const useInvoiceStore = create<InvoiceState>((set, get) => ({
               ...inv,
               status: "rejected",
               validation: { ...inv.validation, overallStatus: "rejected" },
+              exceptions: [...(inv.exceptions || []), newException],
+              reviewer: "当前录单员",
+              reviewTime: new Date().toLocaleString("zh-CN"),
+            }
+          : inv
+      ),
+    }));
+  },
+
+  rejectToException: (invoiceId: string, reason?: string) => {
+    const newException: ExceptionRecord = {
+      recordId: `EXC-${Date.now()}`,
+      invoiceId,
+      exceptionType: "验真退回",
+      description: reason || "验真不通过，转入异常池",
+      rejectReason: reason,
+      operator: "当前录单员",
+      createTime: new Date().toLocaleString("zh-CN"),
+    };
+    set((state) => ({
+      invoices: state.invoices.map((inv) =>
+        inv.invoiceId === invoiceId
+          ? {
+              ...inv,
+              status: "exception",
+              validation: { ...inv.validation, overallStatus: "exception" },
               exceptions: [...(inv.exceptions || []), newException],
               reviewer: "当前录单员",
               reviewTime: new Date().toLocaleString("zh-CN"),

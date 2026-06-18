@@ -48,6 +48,7 @@ export default function VerifyPage() {
     setSelectedInvoice,
     updateInvoiceFields,
     updateInvoiceStatus,
+    updateInvoiceType,
   } = useInvoiceStore();
 
   const [zoom, setZoom] = useState(100);
@@ -87,7 +88,7 @@ export default function VerifyPage() {
 
   const handleInvoiceTypeChange = (type: InvoiceType) => {
     if (!selectedInvoice) return;
-    updateInvoiceFields(selectedInvoice.invoiceId, {} as any);
+    updateInvoiceType(selectedInvoice.invoiceId, type);
   };
 
   const confirmAndNext = () => {
@@ -162,7 +163,7 @@ export default function VerifyPage() {
                     {InvoiceTypeLabels[inv.invoiceType]}
                   </p>
                   <p className="text-xs font-mono text-slate-700 mt-0.5">
-                    ¥{fields.totalAmount.toFixed(2)}
+                    ¥{inv.fields.totalAmount.toFixed(2)}
                   </p>
                   <p className="text-xs text-slate-400 mt-0.5 truncate">
                     {inv.fields.invoiceNumber}

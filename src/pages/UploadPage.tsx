@@ -16,7 +16,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { useInvoiceStore } from "@/store";
-import { InvoiceStatusLabels, InvoiceStatusColors } from "@/types";
+import { InvoiceStatusLabels, InvoiceStatusColors, InvoiceType, type Invoice, type InvoiceBatch } from "@/types";
 import { cn } from "@/lib/utils";
 
 interface UploadingFile {
@@ -28,11 +28,102 @@ interface UploadingFile {
 }
 
 export default function UploadPage() {
-  const { batches, invoices } = useInvoiceStore();
+  const { batches, invoices, addInvoices, addBatch, setSelectedInvoice } = useInvoiceStore();
   const [isDragging, setIsDragging] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadingFiles, setUploadingFiles] = useState<UploadingFile[]>([]);
+  const [currentBatchId, setCurrentBatchId] = useState<string | null>(null);
+
+  const generateInvoiceImage = (seed: number, type: string) => {
+    const colors: Record<string, string> = {
+      vat_special: "245,158,11",
+      vat_normal: "59,130,246",
+      receipt: "16,185,129",
+      itinerary: "139,92,246",
+      reimbursement: "239,68,68",
+    };
+    const color = colors[type] || "100,116,139";
+    return `data:image/svg+xml,${encodeURIComponent(
+      `<svg xmlns='http://www.w3.org/2000/svg' width='400' height='560' viewBox='0 0 400 560'>
+        <rect width='400' height='560' fill='white'/>
+        <rect x='20' y='20' width='360' height='520' fill='rgb(${color})' fill-opacity='0.08' stroke='rgb(${color})' stroke-opacity='0.3' stroke-width='1'/>
+        <rect x='40' y='50' width='320' height='60' fill='rgb(${color})' fill-opacity='0.12'/>
+        <text x='200' y='88' text-anchor='middle' font-family='sans-serif' font-size='18' font-weight='bold' fill='rgb(${color})'>Invoice #${seed}</text>
+        <line x1='40' y1='130' x2='360' y2='130' stroke='rgb(${color})' stroke-opacity='0.2'/>
+        <text x='50' y='160' font-family='sans-serif' font-size='12' fill='#475569'>发票号码: ${seed.toString().padStart(8, "0")}</text>
+        <text x='50' y='185' font-family='sans-serif' font-size='12' fill='#475569'>开票日期: 2026-06-${(seed % 28 || 1).toString().padStart(2, "0")}</text>
+        <text x='50' y='210' font-family='sans-serif' font-size='12' fill='#475569'>购买方: 某某科技有限公司</text>
+        <text x='50' y='235' font-family='sans-serif' font-size='12' fill='#475569'>销售方: 供应商${seed}有限公司</text>
+        <rect x='40' y='260' width='320' height='180' fill='#F8FAFC' stroke='#E2E8F0' stroke-width='1'/>
+        <text x='50' y='285' font-family='sans-serif' font-size='11' fill='#64748B'>项目名称</text>
+        <text x='280' y='285' font-family='sans-serif' font-size='11' fill='#64748B'>金额</text>
+        <text x='50' y='320' font-family='sans-serif' font-size='12' fill='#334155'>咨询服务费</text>
+        <text x='280' y='320' font-family='sans-serif' font-size='12' fill='#334155'>¥${(seed * 128.5).toFixed(2)}</text>
+        <text x='200' y='425' text-anchor='end' font-family='sans-serif' font-size='14' font-weight='bold' fill='rgb(${color})'>价税合计: ¥${(seed * 203.28).toFixed(2)}</text>
+      </svg>`
+    )}`;
+  };
+
+  const createInvoiceFromUpload = (
+    fileId: string,
+    fileName: string,
+    batchId: string,
+    seed: number
+  ): Invoice => {
+    const types: InvoiceType[] = [
+      "vat_special",
+      "vat_normal",
+      "receipt",
+      "itinerary",
+      "reimbursement",
+    ];
+    const type = types[seed % 5];
+    const imageUrl = generateInvoiceImage(seed, type);
+    const amount = Number((seed * 203.28).toFixed(2));
+    const tax = Number((seed * 18.48).toFixed(2));
+
+    return {
+      invoiceId: `INV-${Date.now()}-${seed.toString().padStart(4, "0")}`,
+      batchId,
+      imageUrl,
+      thumbnailUrl: imageUrl,
+      invoiceType: type,
+      status: "pending_review",
+      confidence: 0.78 + Math.random() * 0.2,
+      fields: {
+        invoiceNumber: (seed * 17).toString().padStart(8, "0"),
+        invoiceDate: `2026-06-${(seed % 28 || 1).toString().padStart(2, "0")}`,
+        totalAmount: amount,
+        taxAmount: tax,
+        buyerName: "某某科技有限公司",
+        buyerTaxId: `91110000MA${(seed * 13579).toString().padStart(10, "0").slice(0, 10)}`,
+        sellerName: `供应商${seed}有限公司`,
+        sellerTaxId: `91310000MA${(seed * 24680).toString().padStart(10, "0").slice(0, 10)}`,
+        remark: fileName,
+        fieldConfidence: {
+          invoiceNumber: 0.97,
+          invoiceDate: 0.94,
+          totalAmount: 0.96,
+          taxAmount: 0.93,
+          buyerName: 0.91,
+          sellerName: 0.92,
+        },
+      },
+      validation: {
+        duplicateCheck: "passed",
+        layoutCheck: "passed",
+        amountCheck: "passed",
+        riskWarning: "passed",
+        reimbursementMatch: "passed",
+        alterationCheck: "passed",
+        overallStatus: "pending_review",
+        warnings: [],
+      },
+      reimbursementAmount: amount,
+      pageCount: 1,
+    };
+  };
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -52,8 +143,24 @@ export default function UploadPage() {
   }, []);
 
   const simulateUpload = (files: File[]) => {
+    const timestamp = Date.now();
+    const newBatchId = `BATCH-${new Date().toISOString().slice(0, 10).replace(/-/g, "")}-${Math.floor(Math.random() * 900 + 100)}`;
+    setCurrentBatchId(newBatchId);
+
+    const newBatch: InvoiceBatch = {
+      batchId: newBatchId,
+      batchName: `手动上传-${new Date().toLocaleDateString("zh-CN")}`,
+      uploader: "当前录单员",
+      uploadTime: new Date().toLocaleString("zh-CN"),
+      totalCount: files.length,
+      processedCount: 0,
+      department: "财务共享中心",
+      status: "processing",
+    };
+    addBatch(newBatch);
+
     const newFiles: UploadingFile[] = files.map((file, idx) => ({
-      id: `file-${Date.now()}-${idx}`,
+      id: `file-${timestamp}-${idx}`,
       name: file.name,
       size: file.size,
       progress: 0,
@@ -61,8 +168,11 @@ export default function UploadPage() {
     }));
     setUploadingFiles((prev) => [...prev, ...newFiles]);
 
+    const createdInvoices: Invoice[] = [];
+
     newFiles.forEach((f, idx) => {
       let progress = 0;
+      const seed = Math.floor(Math.random() * 9000 + 1000);
       const interval = setInterval(() => {
         progress += Math.random() * 15 + 5;
         if (progress >= 100) {
@@ -74,13 +184,22 @@ export default function UploadPage() {
             )
           );
           setTimeout(() => {
+            const isSuccess = Math.random() > 0.1;
             setUploadingFiles((prev) =>
               prev.map((pf) =>
                 pf.id === f.id
-                  ? { ...pf, status: Math.random() > 0.1 ? "success" : "failed" }
+                  ? { ...pf, status: isSuccess ? "success" : "failed" }
                   : pf
               )
             );
+            if (isSuccess) {
+              const newInvoice = createInvoiceFromUpload(f.id, f.name, newBatchId, seed + idx);
+              createdInvoices.push(newInvoice);
+              addInvoices([newInvoice]);
+              if (createdInvoices.length === 1) {
+                setSelectedInvoice(newInvoice.invoiceId);
+              }
+            }
           }, 1500 + idx * 300);
         } else {
           setUploadingFiles((prev) =>

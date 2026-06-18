@@ -20,8 +20,10 @@ import {
   FileX,
   Eye,
   RotateCcw,
+  X,
+  MessageSquare,
 } from "lucide-react";
-import { useInvoiceStore } from "@/store";
+import { useInvoiceStore, useSettingsStore } from "@/store";
 import {
   InvoiceTypeLabels,
   InvoiceStatusColors,
@@ -88,10 +90,15 @@ export default function ValidatePage() {
     setSelectedInvoice,
     passInvoice,
     sendToRecheck,
+    rejectToException,
   } = useInvoiceStore();
+  const { rejectTemplates } = useSettingsStore();
   const [expandedWarnings, setExpandedWarnings] = useState<Set<string>>(
     new Set()
   );
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectReason, setRejectReason] = useState("");
+  const [rejectTemplateId, setRejectTemplateId] = useState("");
 
   const validatingInvoices = invoices.filter(
     (inv) =>
@@ -445,7 +452,11 @@ export default function ValidatePage() {
               </button>
               <button
                 className="btn-danger flex-1"
-                onClick={() => {}}
+                onClick={() => {
+                  setShowRejectModal(true);
+                  setRejectReason("");
+                  setRejectTemplateId("");
+                }}
               >
                 <FileX className="w-4 h-4 mr-1.5" />
                 退回异常池
@@ -461,6 +472,100 @@ export default function ValidatePage() {
           </div>
         </div>
       </div>
+
+      {showRejectModal && selectedInvoice && (
+        <div className="fixed inset-0 bg-slate-900/50 flex items-center justify-center z-50 animate-fade-in">
+          <div className="bg-white rounded-sm shadow-lg w-[500px] animate-slide-up">
+            <div className="px-5 py-4 border-b border-slate-200 flex items-center justify-between">
+              <h3 className="text-base font-semibold text-slate-800">
+                退回至异常池
+              </h3>
+              <button
+                className="btn-ghost p-1.5"
+                onClick={() => setShowRejectModal(false)}
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="p-3 bg-danger-50 rounded-sm border border-danger-100">
+                <p className="text-sm text-danger-700">
+                  正在退回: <span className="font-mono">{selectedInvoice.invoiceId}</span>
+                </p>
+                <p className="text-xs text-danger-600 mt-0.5">
+                  金额: ¥{selectedInvoice.fields.totalAmount.toFixed(2)} ·{" "}
+                  {InvoiceTypeLabels[selectedInvoice.invoiceType]}
+                </p>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-slate-700 mb-1.5 block">
+                  选择退回原因模板
+                </label>
+                <select
+                  value={rejectTemplateId}
+                  onChange={(e) => {
+                    setRejectTemplateId(e.target.value);
+                    const tpl = rejectTemplates.find((t) => t.templateId === e.target.value);
+                    if (tpl) setRejectReason(tpl.content);
+                  }}
+                  className="input-field text-sm"
+                >
+                  <option value="">-- 请选择模板或手动填写 --</option>
+                  {rejectTemplates.filter((t) => t.enabled).map((t) => (
+                    <option key={t.templateId} value={t.templateId}>
+                      [{t.category}] {t.content.slice(0, 30)}
+                      {t.content.length > 30 ? "..." : ""}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="text-sm font-medium text-slate-700 mb-1.5 block">
+                  退回原因说明 <span className="text-danger-500">*</span>
+                </label>
+                <textarea
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  rows={4}
+                  className="input-field text-sm resize-none"
+                  placeholder="请详细说明退回原因，便于后续复核处理"
+                />
+              </div>
+
+              <div className="flex items-center justify-between text-xs text-slate-500">
+                <span>操作人: 当前录单员</span>
+                <span>
+                  <MessageSquare className="w-3 h-3 inline mr-1" />
+                  {new Date().toLocaleString("zh-CN")}
+                </span>
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-slate-200 bg-slate-50 flex items-center justify-end space-x-2">
+              <button
+                className="btn-outline"
+                onClick={() => setShowRejectModal(false)}
+              >
+                取消
+              </button>
+              <button
+                className="btn-danger"
+                disabled={!rejectReason.trim()}
+                onClick={() => {
+                  rejectToException(selectedInvoice.invoiceId, rejectReason);
+                  setShowRejectModal(false);
+                  setRejectReason("");
+                  setRejectTemplateId("");
+                }}
+              >
+                <FileX className="w-4 h-4 mr-1.5" />
+                确认退回
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
